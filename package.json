@@ -1,0 +1,32 @@
+{
+	"name": "dockgen-express-swagger",
+	"version": "1.0.0",
+	"description": "",
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/igormigunov/dockgen-express-swagger"
+	},
+	"bugs": {
+		"url": "https://github.com/igormigunov/dockgen-express-swagger/issues"
+	},
+	"homepage": "https://github.com/igormigunov/dockgen-express-swagger#readme",
+	"keywords": [
+		"api",
+		"nodejs",
+		"express",
+		"joi",
+		"swagger",
+		"docker",
+		"docker-compose"
+	],
+	"author": "Igor Migunov <igormigunov42@gmail.com> (https://github.com/igormigunov)",
+	"license": "MIT",
+	"scripts": {
+		"start": "node ."
+	},
+	"main": "index.js",
+	"engines": {
+		"node": ">=7.6.0",
+		"npm": "4.2.0"
+	}
+}
