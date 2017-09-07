@@ -166,7 +166,7 @@ const generateJson = (app, options = {}) => {
 								required: v.in === 'params',
 								default: v.default
 							};
-							Object.assign(item, v.values ? { unum: v.values } : {})
+							Object.assign(item, v.values ? { enum: v.values } : {})
 						}
 						return item;
 					}).compact().value();
