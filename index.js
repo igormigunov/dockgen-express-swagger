@@ -31,6 +31,9 @@ const parseByType = (data) => {
 			const ob = { type, pattern: pattern ? pattern.toString() : null, description, default: defaultValue };
 			result = key ? { [key]: ob } : ob;
 			break;
+		case 'date':
+			result = { [key]: { format: 'date-time', type: 'string', description  } };
+			break;
 		case 'number':
 			const isInteger = data.schema._tests.some(i => i.name === 'integer');
 			const isPositive = data.schema._tests.some(i => i.name === 'positive');
@@ -155,7 +158,8 @@ const generateJson = (app, options = {}) => {
 							Object.assign(bodyProps, { [ind]: {
 								type: v.type || 'string',
 								description: fDescr,
-								default: v.default
+								default: v.default,
+								format: v.format
 							} });
 						} else {
 							item = {
@@ -164,7 +168,8 @@ const generateJson = (app, options = {}) => {
 								description: fDescr,
 								type: v.type || 'string',
 								required: v.in === 'params',
-								default: v.default
+								default: v.default,
+								format: v.format
 							};
 							Object.assign(item, v.values ? { enum: v.values } : {})
 						}
@@ -180,15 +185,15 @@ const generateJson = (app, options = {}) => {
 						});
 					}
 					const d = {
-						tags: tags || [routePathFormated.replace(/[\{\}]/g, '').split('/')[2]],
+						tags: [routePathFormated.replace(/[\{\}]/g, '').split('/')[2]] || 'default',
 						summary: summary || `${method.toUpperCase()} - ${routePathFormated}`,
 						produces: produces || ['application/json'],
 						parameters: currentParameters,
 						responses
 					};
-					if (d.parameters.length === 0) {
-						return res;
-					}
+					// if (d.parameters.length === 0) {
+					// 	return res;
+					// }
 					return Object.assign(res, { [method]: d });
 				}, {});
 				if (Object.keys(result).length > 0) {
