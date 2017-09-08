@@ -15,20 +15,20 @@ const parseByType = (data) => {
 	const key = data.key
 	let description =  data.schema._notes.join(', ');
 	const defaultValue = data.schema._flags.default;
+	const values = data.schema._valids._set || []
 	switch (type) {
 		case 'alternatives':
 			result = { [key]: data.schema._inner.matches.map((item) => parseByType(item)) }
 			break;
 		case 'any':
-			const allow = data.schema._valids._set || []
-			result = { [key]: { type: 'any', values: allow, description, default: defaultValue } }
+			result = { [key]: { type: 'any', values, description, default: defaultValue } }
 			break;
 		case 'string':
 			let pattern = null
 			if (data.schema._tests.length === 1 && data.schema._tests[0].arg) {
 				pattern = data.schema._tests[0].arg.pattern;
 			}
-			const ob = { type, pattern: pattern ? pattern.toString() : null, description, default: defaultValue };
+			const ob = { type, pattern: pattern ? pattern.toString() : null, description, default: defaultValue, values };
 			result = key ? { [key]: ob } : ob;
 			break;
 		case 'date':
@@ -40,7 +40,7 @@ const parseByType = (data) => {
 			if (isInteger) type = 'integer';
 			if (isPositive) description = `${description} positive`;
 		default:
-			result = key ? { [key]: { type, description, default: defaultValue } } : { type, description, default: defaultValue };
+			result = key ? { [key]: { type, description, default: defaultValue, values } } : { type, description, default: defaultValue, values };
 	}
 	return result;
 }
@@ -139,6 +139,8 @@ const generateJson = (app, options = {}) => {
 		data.forEach((route) => {
 			if (route.path.search(/\*/) === -1) {
 				const routePathFormated = route.path.replace(/\/\:([^\/]+)\/?/g, '/{$1}/')
+				if (routePathFormated === '/') return true;
+				const tag = routePathFormated.replace(/[\{\}]/g, '').split('/')[2];
 				const result = Object.keys(route.methods).reduce((res, method) => {
 					const summary = _.result(json.paths, `${routePathFormated}.${method}.summary`);
 					const tags = _.result(json.paths, `${routePathFormated}.${method}.tags`);
@@ -172,7 +174,7 @@ const generateJson = (app, options = {}) => {
 								default: v.default,
 								format: v.format
 							};
-							Object.assign(item, v.values ? { enum: v.values } : {})
+							Object.assign(item, (v.values && v.values.length > 0) ? { enum: v.values } : {})
 						}
 						return item;
 					}).compact().value();
@@ -186,7 +188,7 @@ const generateJson = (app, options = {}) => {
 						});
 					}
 					const d = {
-						tags: [routePathFormated.replace(/[\{\}]/g, '').split('/')[2]] || 'default',
+						tags: tag ? [tag] : 'default',
 						summary: summary || `${method.toUpperCase()} - ${routePathFormated}`,
 						produces: produces || ['application/json'],
 						parameters: currentParameters,
