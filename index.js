@@ -4,6 +4,7 @@ const swagger = require('./swagger.json');
 const promisify = require('util').promisify;
 const _ = require('lodash');
 const fs = require('fs');
+const fsExtra = require('fs-extra');
 
 const truncate = promisify(fs.truncate);
 const writeFile = promisify(fs.writeFile);
@@ -135,23 +136,47 @@ const generateJson = (app, options = {}) => {
 		const data = getEndpoints(app);
 		let json = options.json ? Object.assign({}, options.json) : swagger;
 		const hideEmpty = options.hideEmpty;
+		const rootPath = options.rootPath || 'api/swagger/';
+		const resetParams = options.resetParams;
 		const paths = {};
+		const definitions = {};
+		if (fsExtra.pathExistsSync(`${rootPath}definitions`)) {
+			fs.readdirSync(`${rootPath}definitions`).forEach(fileName => {
+				Object.assign(definitions, {
+					[fileName.replace('.json', '')]: fsExtra.readJsonSync(`${rootPath}definitions/${fileName}`)
+				})
+			})
+		}
 		data.forEach((route) => {
 			if (route.path.search(/\*/) === -1) {
-				const routePathFormated = route.path.replace(/\/\:([^\/]+)\/?/g, '/{$1}/')
+				const routePathFormated = route.path.replace(/\/\:([^\/]+)\/?/g, '/{$1}/');
 				if (routePathFormated === '/') return true;
+				fsExtra.mkdirsSync(`${rootPath}routes${routePathFormated}`);
 				const tag = routePathFormated.replace(/[\{\}]/g, '').split('/')[2];
 				const result = Object.keys(route.methods).reduce((res, method) => {
-					const summary = _.result(json.paths, `${routePathFormated}.${method}.summary`);
-					const tags = _.result(json.paths, `${routePathFormated}.${method}.tags`);
-					const produces = _.result(json.paths, `${routePathFormated}.${method}.produces`);
-					const responses = _.result(json.paths, `${routePathFormated}.${method}.responses`);
+					const routeMethodPath = `${rootPath}routes${routePathFormated}/${method}/`
+					let mainData = {
+						tags: tag ? [tag] : 'default',
+						summary: `${method.toUpperCase()} - ${routePathFormated}`,
+						produces:['application/json']
+					};
+					if (fsExtra.pathExistsSync(`${routeMethodPath}index.json`)) {
+						mainData = fsExtra.readJsonSync(`${routeMethodPath}index.json`)
+					}
+					let responses = {};
+					if (fsExtra.pathExistsSync(`${routeMethodPath}responses.json`)) {
+						responses = fsExtra.readJsonSync(`${routeMethodPath}responses.json`)
+					}
+					let parameters = [];
+					if (fsExtra.pathExistsSync(`${routeMethodPath}parameters.json`)) {
+						parameters = fsExtra.readJsonSync(`${routeMethodPath}parameters.json`)
+					}
 					const dFormated = _.reduce(route.methods[method], (r, v, k) => {
 						_.forEach(v, d => (d.in = k));
 						return Object.assign(r, v);
 					}, {});
-					const bodyProps = {};
-					const currentParameters = _.chain(dFormated).map((v, ind) => {
+					let bodyProps = {};
+					let currentParameters = _.chain(dFormated).map((v, ind) => {
 						let item = null;
 						if (_.isArray(v)) {
 							v.description = v.map(i => `${i.type} ${i.description}`).join(' or ');
@@ -179,6 +204,12 @@ const generateJson = (app, options = {}) => {
 						return item;
 					}).compact().value();
 					if (Object.keys(bodyProps).length > 0) {
+						const currentBody = parameters.find(item => item.in === 'body')
+						if (currentBody && !resetParams) {
+							Object.keys(currentBody.schema.properties).forEach((key) => {
+								Object.assign(bodyProps[key], currentBody.schema.properties[key])
+							})
+						}
 						currentParameters.push({
 							name: 'body',
 							in: 'body',
@@ -186,17 +217,16 @@ const generateJson = (app, options = {}) => {
 								properties: bodyProps
 							}
 						});
+					} else if(!resetParams){
+						currentParameters = _.unionBy(parameters, currentParameters, 'name')
 					}
-					const d = {
-						tags: tag ? [tag] : 'default',
-						summary: summary || `${method.toUpperCase()} - ${routePathFormated}`,
-						produces: produces || ['application/json'],
-						parameters: currentParameters,
-						responses
-					};
-					if (d.parameters.length === 0 && hideEmpty) {
+					if (currentParameters.length === 0 && hideEmpty) {
 						return res;
 					}
+					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/index.json`, mainData, { spaces: 2 })
+					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/responses.json`, responses, { spaces: 2 })
+					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/parameters.json`, currentParameters, { spaces: 2 })
+					const d = Object.assign({}, mainData, { responses }, { parameters: currentParameters } );
 					return Object.assign(res, { [method]: d });
 				}, {});
 				if (Object.keys(result).length > 0) {
@@ -205,17 +235,9 @@ const generateJson = (app, options = {}) => {
 			}
 		});
 		json.paths = paths;
-		fs.exists('api/swagger/swagger.json', (exists) => {
-			if (exists) {
-				truncate('api/swagger/swagger.json', 0)
-					.then((res) => writeFile('api/swagger/swagger.json', JSON.stringify(json, null, 4)))
-					.then(() => console.log('Documentation has been overwritten'))
-					.catch(err => console.log(err));
-			} else {
-				writeFile('api/swagger/swagger.json', JSON.stringify(json, null, 4))
-					.then(() => console.log('Documentation has been generated'));
-			}
-		});
+		json.definitions = definitions;
+		fsExtra.outputJsonSync(`${rootPath}swagger.json`, json)
+		console.log("Documentation has been generated")
 		return json;
 	} catch (err) {
 		console.log(err);
