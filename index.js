@@ -134,6 +134,7 @@ const generateJson = (app, options = {}) => {
 		console.log('Start generation documentation')
 		const data = getEndpoints(app);
 		let json = options.json ? Object.assign({}, options.json) : swagger;
+		const hideEmpty = options.hideEmpty;
 		const paths = {};
 		data.forEach((route) => {
 			if (route.path.search(/\*/) === -1) {
@@ -191,9 +192,9 @@ const generateJson = (app, options = {}) => {
 						parameters: currentParameters,
 						responses
 					};
-					// if (d.parameters.length === 0) {
-					// 	return res;
-					// }
+					if (d.parameters.length === 0 && hideEmpty) {
+						return res;
+					}
 					return Object.assign(res, { [method]: d });
 				}, {});
 				if (Object.keys(result).length > 0) {
