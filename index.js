@@ -51,7 +51,7 @@ const parseByType = (data) => {
 			result = { [key]: data.schema._inner.matches.map((item) => parseByType(item)) }
 			break;
 		case 'any':
-			result = { [key]: { type: 'any', values, description, default: defaultValue } }
+			result = { [key]: { type: 'string', values, description, default: defaultValue } }
 			break;
 		case 'string':
 			let pattern = null
@@ -159,23 +159,117 @@ var getEndpoints = function (app, path, endpoints) {
 
 	return endpoints;
 }
+const getSchemaType = (item) => {
+	const ref = item.ref ? {
+		"$ref": `#/definitions/${item.ref}`
+	} : null
+	if (_.isArray(item)) {
+		if (item[0].name || (item[0].type && item[0].type.name)) {
+			return {
+				type: 'array',
+				items: getSchemaType(item[0])
+			}
+		} else { //Nested Array
+			const schema = {}
+			_.each(item[0], (v, k) => Object.assign(schema, { [k]: getSchemaType(v) }))
+			return {
+				type: 'array',
+				items: {
+					type: 'object',
+					properties: schema
+				}
+			}
+		}
+	}
+	let typeName = item.name || (item.type && item.type.name)
+	const ex = {}
+	switch (typeName) {
+		case "ObjectId":
+		case "Mixed":
+			typeName = 'object';
+			break;
+		case "Date":
+			typeName = 'string'
+			ex.format = 'date-time'
+			break;
+	}
+	return typeName && Object.assign(!ref ? { type: typeName.toLowerCase() } : {}, ref, ex);
+
+}
+const generateDefinitions = (models, rootPath) => {
+	console.log('Start generating definitions')
+	const result = {};
+	_.each(models, (model, key) => {
+		const { nested, obj } = model.schema;
+		result[key] = {};
+		_.each(obj, (item, field) => {
+			if (!nested[field]) {
+				Object.assign(result[key], { [field]: getSchemaType(item) })
+			} else {
+				result[key][field] = {
+					type: 'object',
+					properties: {}
+				}
+				_.each(item, (nestedItem, nestedKey) => {
+					Object.assign(result[key][field].properties, { [nestedKey]: getSchemaType(nestedItem) })
+				})
+			}
+		})
+	})
+	_.each(result, (properties, key) => {
+		const dataFormated = {
+			type: 'object',
+			properties
+		}
+		fsExtra.outputJsonSync(`${rootPath}definitions/${key}.json`, dataFormated, { spaces: 2 })
+	})
+	return result
+
+}
+const findNested = (obj, key, memo) => {
+	var i,
+		proto = Object.prototype,
+		ts = proto.toString,
+		hasOwn = proto.hasOwnProperty.bind(obj);
+
+	if ('[object Array]' !== ts.call(memo)) memo = [];
+
+	for (i in obj) {
+		if (hasOwn(i)) {
+			if (i === key) {
+				memo.push(obj[i]);
+			} else if ('[object Array]' === ts.call(obj[i]) || '[object Object]' === ts.call(obj[i])) {
+				findNested(obj[i], key, memo);
+			}
+		}
+	}
+
+	return memo;
+}
+const getRefs = (ref, defRoot, result, l = 1) => {
+	result.unshift(`${ref}---${l}`)
+	if (fsExtra.pathExistsSync(`${defRoot}${ref}.json`)) {
+		const refData = fsExtra.readJsonSync(`${defRoot}${ref}.json`)
+		const nestedRefs =
+			_.chain(findNested(refData, '$ref').map(i => i.replace('#/definitions/','')))
+				.uniq()
+				.pullAll(result.map(i => i.substr(0, i.length - 4)))
+				.value();
+		_.each(nestedRefs, ref => getRefs(ref, defRoot, result, l + 1))
+	}
+
+}
 const generateJson = (app, options = {}) => {
 	try {
-		console.log('Start generation documentation')
+		console.log('Start generating documentation')
+		const rootPath = options.rootPath || 'api/swagger/';
+		generateDefinitions(app.lib.models, rootPath);
 		const data = getEndpoints(app);
 		let json = options.json ? Object.assign({}, options.json) : swagger;
 		const hideEmpty = options.hideEmpty;
-		const rootPath = options.rootPath || 'api/swagger/';
 		const resetParams = options.resetParams;
 		const paths = {};
-		const definitions = {};
-		if (fsExtra.pathExistsSync(`${rootPath}definitions`)) {
-			fs.readdirSync(`${rootPath}definitions`).forEach(fileName => {
-				Object.assign(definitions, {
-					[fileName.replace('.json', '')]: fsExtra.readJsonSync(`${rootPath}definitions/${fileName}`)
-				})
-			})
-		}
+		let definitions = [];
 		data.forEach((route) => {
 			if (route.path.search(/\*/) === -1) {
 				const routePathFormated = route.path.replace(/\/\:([^\/]+)\/?/g, '/{$1}/');
@@ -185,16 +279,20 @@ const generateJson = (app, options = {}) => {
 				const result = Object.keys(route.methods).reduce((res, method) => {
 					const routeMethodPath = `${rootPath}routes${routePathFormated}/${method}/`
 					let mainData = {
-						tags: tag ? [tag] : 'default',
+						tags: tag ? [tag] : ['default'],
 						summary: `${method.toUpperCase()} - ${routePathFormated}`,
 						produces:['application/json']
 					};
-					if (fsExtra.pathExistsSync(`${routeMethodPath}index.json`)) {
+					/*if (fsExtra.pathExistsSync(`${routeMethodPath}index.json`)) {
 						mainData = fsExtra.readJsonSync(`${routeMethodPath}index.json`)
-					}
+					}*/
 					let responses = {};
 					if (fsExtra.pathExistsSync(`${routeMethodPath}responses.json`)) {
 						responses = parseResponses(fsExtra.readJsonSync(`${routeMethodPath}responses.json`))
+						const refs = findNested(responses, '$ref').map(i => i.replace('#/definitions/',''));
+						const refsResult = [];
+						_.each(refs, ref => getRefs(ref, `${rootPath}definitions/`, refsResult))
+						definitions = _.union(definitions, refsResult)
 					}
 					let parameters = [];
 					if (fsExtra.pathExistsSync(`${routeMethodPath}parameters.json`)) {
@@ -253,9 +351,12 @@ const generateJson = (app, options = {}) => {
 						return res;
 					}
 					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/index.json`, mainData, { spaces: 2 })
-					// fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/responses.json`, responses, { spaces: 2 })
+					//fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/responses.json`, responses, { spaces: 2 })
 					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/parameters.json`, currentParameters, { spaces: 2 })
-					const d = Object.assign({}, mainData, { responses }, { parameters: currentParameters } );
+					const d = Object.assign({}, mainData,
+						Object.keys(responses).length ? { responses } : { responses : { 200: { description: '' } }},
+						currentParameters.length ? { parameters: currentParameters } : {}
+					);
 					return Object.assign(res, { [method]: d });
 				}, {});
 				if (Object.keys(result).length > 0) {
@@ -264,7 +365,20 @@ const generateJson = (app, options = {}) => {
 			}
 		});
 		json.paths = paths;
-		json.definitions = definitions;
+		if (fsExtra.pathExistsSync(`${rootPath}definitions`) && definitions.length) {
+			const defResult = {};
+			const defsFormated = _.chain(definitions)
+				.sortBy([i => -1 * parseInt(i.substr(-1), 10)])
+				.map(i => i.substr(0, i.length - 4))
+				.uniq()
+				.value()
+			_.each(defsFormated, (def) => {
+				if (fsExtra.pathExistsSync(`${rootPath}definitions/${def}.json`)) {
+					defResult[def] = fsExtra.readJsonSync(`${rootPath}definitions/${def}.json`)
+				}
+			})
+			json.definitions = defResult;
+		}
 		fsExtra.outputJsonSync(`${rootPath}swagger.json`, json)
 		console.log("Documentation has been generated")
 		return json;
