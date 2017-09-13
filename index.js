@@ -9,21 +9,6 @@ const fsExtra = require('fs-extra');
 const truncate = promisify(fs.truncate);
 const writeFile = promisify(fs.writeFile);
 
-const getTemplateForResponse = (data, isEnum) => {
-	const enumValue = isEnum ? data : '';
-	return {
-		schema: {
-			type: 'object',
-			properties: {
-				tsl: {
-					type: 'string',
-					default: data[0],
-					enum: enumValue
-				}
-			}
-		}
-	}
-}
 const parseResponses = (data) => {
 	const validResponse = data.valid;
 	if (!validResponse) return data;
@@ -259,6 +244,40 @@ const getRefs = (ref, defRoot, result, l = 1) => {
 	}
 
 }
+const getTemplateForResponse = (data, isEnum) => {
+	const enumValue = isEnum ? data : '';
+	return {
+		schema: {
+			type: 'object',
+			properties: {
+				tsl: Object.assign({
+					type: 'string',
+					default: data[0],
+				}, isEnum ? { enum: enumValue } : {})
+			}
+		},
+		description: isEnum ? `one from list ${enumValue.join(', ')}` : data[0]
+	}
+};
+const setStatistics = (totalResults, responses, currentParameters, method, routePathFormated) => {
+	totalResults.all += 1;
+	if (currentParameters.length === 0) {
+		totalResults.withoutParams.count += 1;
+		totalResults.withoutParams.list.push(`${method} ${routePathFormated}`)
+	}
+	if (!Object.keys(responses).length) {
+		totalResults.withoutResponse.count += 1;
+		totalResults.withoutResponse.list.push(`${method} ${routePathFormated}`)
+	}
+	if (currentParameters.length === 0 && !Object.keys(responses).length) {
+		totalResults.empty.count += 1;
+		totalResults.empty.list.push(`${method} ${routePathFormated}`)
+	}
+	if (currentParameters.length !== 0 && Object.keys(responses).length) {
+		totalResults.completed.count += 1;
+		totalResults.completed.list.push(`${method} ${routePathFormated}`)
+	}
+}
 const generateJson = (app, options = {}) => {
 	try {
 		console.log('Start generating documentation')
@@ -270,6 +289,25 @@ const generateJson = (app, options = {}) => {
 		const resetParams = options.resetParams;
 		const paths = {};
 		let definitions = [];
+		const totalResults = {
+			all: 0,
+			empty: {
+				count: 0,
+				list: []
+			},
+			completed: {
+				count: 0,
+				list: []
+			},
+			withoutParams: {
+				count: 0,
+				list: []
+			},
+			withoutResponse: {
+				count: 0,
+				list: []
+			}
+		};
 		data.forEach((route) => {
 			if (route.path.search(/\*/) === -1) {
 				const routePathFormated = route.path.replace(/\/\:([^\/]+)\/?/g, '/{$1}/');
@@ -283,9 +321,9 @@ const generateJson = (app, options = {}) => {
 						summary: `${method.toUpperCase()} - ${routePathFormated}`,
 						produces:['application/json']
 					};
-					/*if (fsExtra.pathExistsSync(`${routeMethodPath}index.json`)) {
+					if (fsExtra.pathExistsSync(`${routeMethodPath}index.json`)) {
 						mainData = fsExtra.readJsonSync(`${routeMethodPath}index.json`)
-					}*/
+					}
 					let responses = {};
 					if (fsExtra.pathExistsSync(`${routeMethodPath}responses.json`)) {
 						responses = parseResponses(fsExtra.readJsonSync(`${routeMethodPath}responses.json`))
@@ -347,6 +385,7 @@ const generateJson = (app, options = {}) => {
 					} else if(!resetParams){
 						currentParameters = _.unionBy(parameters, currentParameters, 'name')
 					}
+					setStatistics(totalResults, responses, currentParameters, method, routePathFormated);
 					if (currentParameters.length === 0 && hideEmpty) {
 						return res;
 					}
@@ -381,7 +420,8 @@ const generateJson = (app, options = {}) => {
 		}
 		fsExtra.outputJsonSync(`${rootPath}swagger.json`, json)
 		console.log("Documentation has been generated")
-		return json;
+		console.log(JSON.stringify(totalResults, null, 2))
+		return true
 	} catch (err) {
 		console.log(err);
 	}
