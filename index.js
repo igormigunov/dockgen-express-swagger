@@ -9,7 +9,36 @@ const fsExtra = require('fs-extra');
 const truncate = promisify(fs.truncate);
 const writeFile = promisify(fs.writeFile);
 
-
+const getTemplateForResponse = (data, isEnum) => {
+	const enumValue = isEnum ? data : '';
+	return {
+		schema: {
+			type: 'object',
+			properties: {
+				tsl: {
+					type: 'string',
+					default: data[0],
+					enum: enumValue
+				}
+			}
+		}
+	}
+}
+const parseResponses = (data) => {
+	const validResponse = data.valid;
+	if (!validResponse) return data;
+	return Object.assign(validResponse, Object.keys(data).reduce((res, key) => {
+		if (key !== 'valid') {
+			let errors = data[key].replace(/\s/g, '').split(',');
+			if (errors.length > 1) {
+				return Object.assign(res, { [key]: getTemplateForResponse(errors, true) })
+			} else {
+				return Object.assign(res, { [key]: getTemplateForResponse(errors) })
+			}
+		}
+		return res;
+	}, {}));
+}
 const parseByType = (data) => {
 	let type = data.schema._type;
 	let result = {};
@@ -165,7 +194,7 @@ const generateJson = (app, options = {}) => {
 					}
 					let responses = {};
 					if (fsExtra.pathExistsSync(`${routeMethodPath}responses.json`)) {
-						responses = fsExtra.readJsonSync(`${routeMethodPath}responses.json`)
+						responses = parseResponses(fsExtra.readJsonSync(`${routeMethodPath}responses.json`))
 					}
 					let parameters = [];
 					if (fsExtra.pathExistsSync(`${routeMethodPath}parameters.json`)) {
@@ -224,7 +253,7 @@ const generateJson = (app, options = {}) => {
 						return res;
 					}
 					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/index.json`, mainData, { spaces: 2 })
-					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/responses.json`, responses, { spaces: 2 })
+					// fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/responses.json`, responses, { spaces: 2 })
 					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/parameters.json`, currentParameters, { spaces: 2 })
 					const d = Object.assign({}, mainData, { responses }, { parameters: currentParameters } );
 					return Object.assign(res, { [method]: d });
