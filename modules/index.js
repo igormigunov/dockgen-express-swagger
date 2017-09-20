@@ -5,6 +5,52 @@ const fs = require('fs');
 const path = require('path');
 const errorsDictionary = require('api/constants').errors;
 
+const getErrorsNestedInBlocks = (block, errors) => {
+	if (block.consequent && block.consequent.type === 'ThrowStatement') {
+		const errorName = block.consequent.argument.arguments[0].object.property.name;
+		errors.push({
+			name: errorName,
+			status: errorsDictionary[errorName].status
+		});
+	}
+	block.consequent.body.forEach((block) => {
+		if (block && block.type === 'ThrowStatement') {
+			const errorName = block.argument.arguments[0].object.property.name;
+			errors.push({
+				name: errorName,
+				status: errorsDictionary[errorName].status
+			});
+		}
+		if (block.consequent && (block.consequent.type === 'BlockStatement' || block.consequent.type === 'IfStatement')) {
+			//  || block.consequent.body[0].type === 'ThrowStatement')
+			if (block.consequent && block.consequent.type === 'ThrowStatement') {
+				const errorName = block.consequent.argument.arguments[0].object.property.name;
+				errors.push({
+					name: errorName,
+					status: errorsDictionary[errorName].status
+				});
+			}
+			if (block.consequent && (block.consequent.type === 'BlockStatement' || block.consequent.type === 'IfStatement')) {
+				getErrorsNestedInBlocks(block, errors);
+			}
+		}
+	});
+};
+const getErrFromMainBlock = (arrayBlocks, errors) => {
+	arrayBlocks.forEach((block) => { //  || block.consequent.body[0].type === 'ThrowStatement')
+		if (block.consequent && block.consequent.type === 'ThrowStatement') {
+			const errorName = block.consequent.argument.arguments[0].object.property.name;
+			errors.push({
+				name: errorName,
+				status: errorsDictionary[errorName].status
+			});
+		}
+		if (block.consequent && (block.consequent.type === 'BlockStatement' || block.consequent.type === 'IfStatement')) {
+			getErrorsNestedInBlocks(block, errors);
+		}
+		if (block.type === 'TryStatement') getErrFromMainBlock(block.block.body, errors);
+	});
+};
 const getEndpoint = (data, resultDataOfEndpoints, endpoints) => {
 	let validator = null;
 	let refToDataWithErrors = null;
@@ -16,15 +62,8 @@ const getEndpoint = (data, resultDataOfEndpoints, endpoints) => {
 	} else {
 		refToDataWithErrors = data.arguments[0].body.body;
 	}
-	refToDataWithErrors.forEach((block) => { //  || block.consequent.body[0].type === 'ThrowStatement')
-		if (block.consequent && block.consequent.type === 'ThrowStatement') {
-			const errorName = block.consequent.argument.arguments[0].object.property.name;
-			errors.push({
-				name: errorName,
-				status: errorsDictionary[errorName].status
-			});
-		}
-	});
+	getErrFromMainBlock(refToDataWithErrors, errors);
+
 	endpoints.arrayOfEndpoints.push({
 		validator,
 		endpointType,
@@ -58,7 +97,7 @@ const getBodyExpressions = (array, element) => {
 		}
 	}
 	return array;
-}
+};
 
 module.exports = {
 	getErrorsFromRoutes: (data) => {
