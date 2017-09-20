@@ -9,6 +9,8 @@ const fsExtra = require('fs-extra');
 const truncate = promisify(fs.truncate);
 const writeFile = promisify(fs.writeFile);
 
+const { getErrorsFromRoutes } = require('./modules');
+
 const parseResponses = (data) => {
 	const validResponse = data.valid;
 	if (!validResponse) return data;
