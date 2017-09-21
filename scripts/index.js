@@ -3,7 +3,9 @@
 const esprima = require('esprima');
 const fs = require('fs');
 const path = require('path');
-const errorsDictionary = require('api/constants').errors;
+const rootPath = process.cwd();
+const appRoot = path.normalize(rootPath);
+const errorsDictionary = require(`${appRoot}/api/constants`).errors;
 
 const getErrorsNestedInBlocks = (block, errors) => {
 	if (block.consequent && block.consequent.type === 'ThrowStatement') {
