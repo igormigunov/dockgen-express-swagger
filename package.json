@@ -1,6 +1,6 @@
 {
 	"name": "dockgen-express-swagger",
-	"version": "0.3.0",
+	"version": "0.3.1",
 	"description": "",
 	"repository": {
 		"type": "git",
@@ -29,8 +29,7 @@
 		"swaggerdocgen": "./bin/swaggerdocgen.js"
 	},
 	"engines": {
-		"node": ">=7.6.0",
-		"npm": "4.2.0"
+		"node": ">=7.6.0"
 	},
 	"dependencies": {
 		"fs-extra": "^4.0.1",
