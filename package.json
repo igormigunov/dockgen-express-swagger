@@ -25,9 +25,6 @@
 		"start": "node ."
 	},
 	"main": "index.js",
-	"bin": {
-		"swaggerdocgen": "./bin/swaggerdocgen"
-	},
 	"engines": {
 		"node": ">=7.6.0",
 		"npm": "4.2.0"
