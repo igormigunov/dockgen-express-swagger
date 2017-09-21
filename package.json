@@ -1,6 +1,6 @@
 {
 	"name": "dockgen-express-swagger",
-	"version": "0.3.1",
+	"version": "0.3.12",
 	"description": "",
 	"repository": {
 		"type": "git",
@@ -33,6 +33,7 @@
 	},
 	"dependencies": {
 		"fs-extra": "^4.0.1",
-		"esprima": "^4.0.0"
+		"esprima": "^4.0.0",
+		"lodash": "^4.17.4"
 	}
 }
