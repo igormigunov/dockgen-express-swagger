@@ -8,9 +8,9 @@ const app = require(`${appRoot}/api/server`);
 const generateSwagger = require('../index');
 try {
 
-	fs.exists('api/swagger/swagger.json', (exists) => {
+	fs.exists(`${appRoot}api/swagger/swagger.json`, (exists) => {
 		if (exists) {
-			const json = require('api/swagger/swagger.json');
+			const json = require(`${appRoot}api/swagger/swagger.json`);
 			generateSwagger(app, { json, resetParams: true, hideEmpty: true });
 		} else {
 			generateSwagger(app);
