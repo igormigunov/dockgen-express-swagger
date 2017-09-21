@@ -6,22 +6,14 @@ const _ = require('lodash');
 const fs = require('fs');
 const fsExtra = require('fs-extra');
 
-const truncate = promisify(fs.truncate);
-const writeFile = promisify(fs.writeFile);
-
-const { getErrorsFromRoutes } = require('./modules');
+const { injectErrorsToRoutes } = require('./scripts');
 
 const parseResponses = (data) => {
 	const validResponse = data.valid;
-	if (!validResponse) return data;
-	return Object.assign(validResponse, Object.keys(data).reduce((res, key) => {
-		if (key !== 'valid') {
+	return Object.assign({}, validResponse, Object.keys(data).reduce((res, key) => {
+		if (key !== 'valid' && data[key]) {
 			let errors = data[key].replace(/\s/g, '').split(',');
-			if (errors.length > 1) {
-				return Object.assign(res, { [key]: getTemplateForResponse(errors, true) })
-			} else {
-				return Object.assign(res, { [key]: getTemplateForResponse(errors) })
-			}
+			return Object.assign(res, { [key]: getTemplateForResponse(errors, (errors.length > 1)) })
 		}
 		return res;
 	}, {}));
@@ -285,7 +277,7 @@ const generateJson = (app, options = {}) => {
 		console.log('Start generating documentation')
 		const rootPath = options.rootPath || 'api/swagger/';
 		generateDefinitions(app.lib.models, rootPath);
-		const data = getEndpoints(app);
+		const data = injectErrorsToRoutes(getEndpoints(app));
 		let json = options.json ? Object.assign({}, options.json) : swagger;
 		const hideEmpty = options.hideEmpty;
 		const resetParams = options.resetParams;
@@ -326,14 +318,26 @@ const generateJson = (app, options = {}) => {
 					if (fsExtra.pathExistsSync(`${routeMethodPath}index.json`)) {
 						mainData = fsExtra.readJsonSync(`${routeMethodPath}index.json`)
 					}
-					let responses = {};
+					const errors = (route.errors && route.errors[method].length) ?
+						route.errors[method].reduce((res, item) => {
+							let value = res[item.status];
+							if (value) {
+								value = `${value}, ${item.name}`
+							} else {
+								value = item.name
+							}
+							return Object.assign(res, { [item.status]: value})
+						}, {}) : null
+					let nativeResponses = {}
 					if (fsExtra.pathExistsSync(`${routeMethodPath}responses.json`)) {
-						responses = parseResponses(fsExtra.readJsonSync(`${routeMethodPath}responses.json`))
-						const refs = findNested(responses, '$ref').map(i => i.replace('#/definitions/',''));
-						const refsResult = [];
-						_.each(refs, ref => getRefs(ref, `${rootPath}definitions/`, refsResult))
-						definitions = _.union(definitions, refsResult)
+						nativeResponses = fsExtra.readJsonSync(`${routeMethodPath}responses.json`)
 					}
+					Object.assign(nativeResponses, errors)
+					const responses = parseResponses(nativeResponses)
+					const refs = findNested(responses, '$ref').map(i => i.replace('#/definitions/',''));
+					const refsResult = [];
+					_.each(refs, ref => getRefs(ref, `${rootPath}definitions/`, refsResult))
+					definitions = _.union(definitions, refsResult)
 					let parameters = [];
 					if (fsExtra.pathExistsSync(`${routeMethodPath}parameters.json`)) {
 						parameters = fsExtra.readJsonSync(`${routeMethodPath}parameters.json`)
@@ -392,7 +396,7 @@ const generateJson = (app, options = {}) => {
 						return res;
 					}
 					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/index.json`, mainData, { spaces: 2 })
-					//fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/responses.json`, responses, { spaces: 2 })
+					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/responses.json`, nativeResponses, { spaces: 2 })
 					fsExtra.outputJsonSync(`${rootPath}routes${routePathFormated}/${method}/parameters.json`, currentParameters, { spaces: 2 })
 					const d = Object.assign({}, mainData,
 						Object.keys(responses).length ? { responses } : { responses : { 200: { description: '' } }},
@@ -421,7 +425,6 @@ const generateJson = (app, options = {}) => {
 			json.definitions = defResult;
 		}
 		fsExtra.outputJsonSync(`${rootPath}swagger.json`, json)
-		console.log("Documentation has been generated")
 		console.log(JSON.stringify(totalResults, null, 2))
 		return true
 	} catch (err) {

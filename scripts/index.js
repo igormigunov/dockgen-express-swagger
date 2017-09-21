@@ -58,7 +58,11 @@ const getEndpoint = (data, resultDataOfEndpoints, endpoints) => {
 	const errors = [];
 	if (data.arguments.length === 2) {
 		validator = data.arguments[0].arguments[0].property.name;
-		refToDataWithErrors = data.arguments[1].body.body[0].block.body;
+		if (data.arguments[1].body.body.length === 1) {
+			refToDataWithErrors = data.arguments[1].body.body[0].block.body;
+		} else {
+			refToDataWithErrors = data.arguments[1].body.body;
+		}
 	} else {
 		refToDataWithErrors = data.arguments[0].body.body;
 	}
@@ -100,7 +104,7 @@ const getBodyExpressions = (array, element) => {
 };
 
 module.exports = {
-	getErrorsFromRoutes: (data) => {
+	injectErrorsToRoutes: (data) => {
 		// const files = fs.readdirSync('api/routes/');
 		const read = (dir) =>
 			fs.readdirSync(dir)
@@ -111,7 +115,7 @@ module.exports = {
 					[]);
 		const files = read('api/routes/');
 
-		return files.map((file) => {
+		const errors = files.map((file) => {
 			const resultDataOfEndpoints = [];
 
 			const content = esprima.parseScript(fs.readFileSync(file, 'utf-8'), { tokens: true });
@@ -119,7 +123,24 @@ module.exports = {
 
 			getEndpoints(routes, resultDataOfEndpoints);
 
-			return { file, resultDataOfEndpoints };
+			return { file, resultDataOfEndpoints, route: file.replace(/api\/routes\/(.+)\.js/, '$1') };
 		});
+		data.forEach((routeItem) => {
+			const routeKeys = routeItem.path.match(/\/?v?\d{0,}\/([a-z0-9]+)(\/.+)?/);
+			if (routeKeys && routeKeys[1]) {
+				const eItem = errors.find(item => item.route === routeKeys[1]);
+				let routeError = null;
+
+				if (eItem) {
+					routeError = eItem.resultDataOfEndpoints.find(route => route.route === (routeKeys[2] || '/'));
+				}
+
+				routeItem.errors = routeError ?
+					routeError.endpoints.reduce(
+						(res, item) => Object.assign(res, {[item.endpointType]: item.errors}), {}) :
+					null
+			}
+		})
+		return data
 	}
 };
